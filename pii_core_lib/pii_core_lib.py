@@ -24,7 +24,7 @@ from omegaconf import DictConfig
 
 from core_lib.core_lib import CoreLib
 
-from pii_core_lib.pii_service import PiiService
+from pii_core_lib.data_layers.service.pii_service import PiiService
 
 
 class PiiCoreLib(CoreLib):

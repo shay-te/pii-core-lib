@@ -5,7 +5,7 @@ JSON-shaped payload, packaged as a `core-lib` consumer.
 
 ## What's in here
 
-* **`pii_core_lib.pii_service.PiiService`** — one-call facade with two
+* **`pii_core_lib.data_layers.service.pii_service.PiiService`** — one-call facade with two
   methods:
   * `validate(payload, ...) -> List[PIIPatternFinding]` — scan only.
   * `scrub(payload, ...) -> Any` — scan + return a cleaned copy.

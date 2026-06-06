@@ -1,4 +1,4 @@
-"""Tests for :class:`pii_core_lib.pii_service.PiiService`.
+"""Tests for :class:`pii_core_lib.data_layers.service.pii_service.PiiService`.
 
 Two methods:
   * :meth:`PiiService.validate` — scan only. Returns a list of
@@ -13,7 +13,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from pii_core_lib.pii_service import PiiService
+from pii_core_lib.data_layers.service.pii_service import PiiService
 from pii_core_lib.pii_patterns import PIIPatternFinding
 from pii_core_lib.pii_scrub import PIIDetectedError
 
@@ -338,6 +338,12 @@ class TestStrictMode(unittest.TestCase):
         with self.assertRaises(PIIDetectedError):
             self.service.scrub(text, strict=True, raise_on_pii=True)
 
+    def test_strict_with_none_payload_returns_empty_findings(self):
+        # ``_strict_only_findings`` short-circuits on ``None`` before
+        # touching the strict detectors — covers the early-return path
+        # that the normal-payload tests don't exercise.
+        self.assertEqual(self.service.validate(None, strict=True), [])
+
 
 class TestRaiseOnPii(unittest.TestCase):
     """``raise_on_pii=True`` — raise instead of returning."""
@@ -441,7 +447,7 @@ class TestAuditLoggerDefaultsToModuleLogger(unittest.TestCase):
 
     def test_validate_uses_module_logger_when_caller_omits_audit_logger(self):
         with self.assertLogs(
-            'pii_core_lib.pii_service',
+            'pii_core_lib.data_layers.service.pii_service',
             level='WARNING',
         ) as captured:
             PiiService().validate({'note': 'jane@example.com'})
@@ -452,7 +458,7 @@ class TestAuditLoggerDefaultsToModuleLogger(unittest.TestCase):
 
     def test_scrub_uses_module_logger_when_caller_omits_audit_logger(self):
         with self.assertLogs(
-            'pii_core_lib.pii_service',
+            'pii_core_lib.data_layers.service.pii_service',
             level='WARNING',
         ) as captured:
             PiiService().scrub({'note': 'jane@example.com'})

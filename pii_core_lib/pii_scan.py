@@ -1,6 +1,6 @@
 """Shared output-side PII scan for agent text streams.
 
-Parallel to :mod:`agent_core_lib.helpers.credential_scan` — the
+Parallel to :mod:`pii_core_lib.credential_scan` — the
 credential scan WARNING-logs vendor-issued secret patterns that leaked
 into agent output; this scan does the same for personal data (email,
 SSN, phone, credit card, IBAN). Both are detective-only — by the time

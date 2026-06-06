@@ -27,7 +27,7 @@ operator sees. Logging + raising is identical on both paths.
 Per the workspace rule, every package `__init__.py` is empty — no
 re-exports. Callers import from the module that owns the symbol
 (`from pii_core_lib.pii_patterns import find_pii_patterns`,
-`from pii_core_lib.pii_service import PiiService`).
+`from pii_core_lib.data_layers.service.pii_service import PiiService`).
 
 ## Library-backed detectors are optional extras
 

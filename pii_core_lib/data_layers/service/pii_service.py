@@ -45,7 +45,7 @@ from pii_core_lib.pii_scrub import (
 # Default destination for detection warnings when the caller doesn't
 # pass an ``audit_logger``. Logging here (instead of going silent)
 # means a misconfigured caller still leaves an operator-visible trail
-# under the ``pii_core_lib.pii_service`` logger.
+# under the ``pii_core_lib.data_layers.service.pii_service`` logger.
 _DEFAULT_AUDIT_LOGGER = logging.getLogger(__name__)
 
 
