@@ -1,18 +1,8 @@
-"""Shared output-side credential / phishing scan for agent responses.
+"""Detective output-side scan for credentials / phishing in agent responses.
 
-A one-shot agent client and a streaming agent session run an identical
-detective scan over the agent's final response text: two pattern families
-fire and each emits a WARNING audit line. The scan is detective-only — the
-agent's text has already crossed to the model provider by the time the
-result lands, so the log is an auditable record (rotate / treat-as-
-untrusted), never a block.
-
-Pattern names + redacted previews are logged; full credential values are
-never logged. See ``BYPASS_PROTECTIONS.md`` residuals #16 (phishing) and
-#18 (credential exfil).
-
-This helper lives in ``agent_core_lib`` so any agent client can reuse the
-same detector family and warning contract.
+Detective-only: the text has already reached the model provider, so the
+WARNING log is an audit trail (rotate the named credential), not a block.
+Logs pattern name + redacted preview only — never the credential value.
 """
 
 from __future__ import annotations
