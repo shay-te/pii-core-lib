@@ -1,0 +1,11 @@
+# @package _global_
+core_lib:
+  pii:
+    # ``strict`` enables phonenumbers + dateparser passes on every
+    # scan. Default off: the extra deps + per-call cost are only
+    # worth paying when false-positive phone / bare-DOB hits matter.
+    strict_default: false
+
+    # Default ``context`` label woven into the audit log when the
+    # caller doesn't pass one. Override per call site for triage.
+    default_context: payload
