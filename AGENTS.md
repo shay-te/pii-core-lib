@@ -1,15 +1,43 @@
 # AGENTS Notes — pii-core-lib
 
+## Built on core-lib — read its rulebook first
+
+This library is a `*-core-lib`. The shared architecture, conventions, and
+scaffolding are **not** repeated here — they live in the `core-lib` package
+(the `../core-lib/` checkout beside this repo, or the installed `core-lib`):
+
+| Read | For |
+|---|---|
+| `core-lib/AGENTS.md` | **Read first.** The AGNOSTIC principles, then the canonical recipe (§0–§17): naming, folder tree, config, entities, DataAccess, services, composition root, observers, jobs, migrations, tests, build order, things to avoid, final checklist. |
+| `core-lib/skills/` | Copy-paste scaffolding templates, one per core-lib part. |
+
+**MANDATORY — before you create or modify any part below, first load the
+matching core-lib skill** (open and follow it). This is a hard rule: match the
+row and load the skill *before* writing code. Never write core-lib code from
+memory when a matching skill exists.
+
+| If you are about to… | You MUST first load |
+|---|---|
+| add or change an entity / table / model / column / nested enum | `core-lib-entity` |
+| add or change a DataAccess / DAO / repository / query / get_by / list | `core-lib-data-access` |
+| add or change a Service / business logic / public method / caching | `core-lib-service` |
+| add or change an external client / provider / SDK / connection factory | `core-lib-connection` |
+| add a migration / alter / create / drop a table, column, index, constraint | `core-lib-migration` |
+| add / fix / restructure tests or raise coverage | `core-lib-tests` |
+
+Everything below this line is **pii-core-lib-specific** — lessons that apply only to
+this library. Anything generic belongs in `core-lib/AGENTS.md` instead, so every
+core-lib inherits it.
+
+---
+
 ## Zero-leak invariant (non-negotiable)
 
-`redact_preview` in `pii_core_lib.pii_patterns` returns
-`[REDACTED, len=N]` — **zero bytes** of the matched value. Operators
-triage by pattern name + length; no preview-side disclosure is
-allowed. The four `_redact` / `redact_preview` functions in this
-package (`pii_patterns`, `_pii_strict_phone`, `_pii_strict_dob`,
-`_pii_ner`) all route through the one definition. Do NOT add a
-prefix / suffix / hash / partial-value back. If a debug flow needs
-more, add a separate function with the trade-off in its docstring.
+This repo's concrete instance of core-lib **§4.9**. `redact_preview` in
+`pii_core_lib.pii_patterns` returns `[REDACTED, len=N]` — **zero bytes** of the
+matched value. The four `_redact` / `redact_preview` functions in this package
+(`pii_patterns`, `_pii_strict_phone`, `_pii_strict_dob`, `_pii_ner`) all route
+through that one definition.
 
 Tests that lock the invariant:
 
@@ -18,30 +46,16 @@ Tests that lock the invariant:
 
 ## Two entry points, one core
 
-`PiiService.validate` and `PiiService.scrub` share `_scan_and_announce`
-so a switch from one to the other cannot change which detections an
-operator sees. Logging + raising is identical on both paths.
+This repo's instance of core-lib **§4.8**: `PiiService.validate` and
+`PiiService.scrub` share `_scan_and_announce`, so switching from one to the
+other cannot change which detections an operator sees. Logging + raising is
+identical on both paths.
 
-## Empty `__init__.py` per package
+## Optional detectors and their extras
 
-Per the workspace rule, every package `__init__.py` is empty — no
-re-exports. Callers import from the module that owns the symbol
-(`from pii_core_lib.pii_patterns import find_pii_patterns`,
-`from pii_core_lib.data_layers.service.pii_service import PiiService`).
-
-## Library-backed detectors are optional extras
-
-`phonenumbers` (`_pii_strict_phone`), `dateparser` (`_pii_strict_dob`),
-and `spacy` (`_pii_ner`) are NOT in `requirements.txt`. They are
-declared as `extras_require` in `setup.py` (`pii`, `dob`, `ner`,
-`all`). Imports are lazy — the strict modules only import their
-backing library inside the function the first time it's called, so a
-caller that never opts into `strict=True` doesn't pay the install
-cost.
-
-## Variable naming
-
-Spell out what the value is. No `cfg`, `ws`, `bf`, `s`, `c`, `d`, `r`
-shorthand. `pattern_name`, `matched_text`, `findings`, `scrubbed`,
-`audit_logger` instead. See `library-core-lib/AGENTS.md` for the
-canonical list.
+Per core-lib **§5.4**, the library-backed detectors are opt-in:
+`phonenumbers` (`_pii_strict_phone`), `dateparser` (`_pii_strict_dob`), and
+`spacy` (`_pii_ner`) are **not** in `requirements.txt` — they are
+`extras_require` in `setup.py` (`pii`, `dob`, `ner`, `all`), imported lazily
+inside the function that needs them, so a caller who never opts into
+`strict=True` pays nothing.
