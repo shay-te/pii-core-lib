@@ -1607,7 +1607,7 @@ Verbose:
   addresses / PO boxes / SSNs.
 * **TDD lock wired in `_UNSUPPORTED_TYPE_CORPORA`** (✅): the
   remaining types are locked in
-  `agent_core_lib/tests/test_pii_third_party_corpora.py`'s
+  `tests/test_pii_third_party_corpora.py`'s
   `_UNSUPPORTED_TYPE_CORPORA` dict — one key per type, every upstream
   POSITIVE input as the value. The
   `test_unsupported_type_locks_no_dedicated_pattern_fires` method

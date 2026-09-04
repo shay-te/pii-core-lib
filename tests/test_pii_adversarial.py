@@ -597,7 +597,7 @@ class TestKnownLimitationsCatalog(unittest.TestCase):
         # edit when adding a pattern. The drift assert is a layered
         # check: this file's adversarial corpus was written against
         # whatever the canonical set contained at the time.
-        from pii_core_lib.tests.test_pii_scan import _EXPECTED_PATTERN_NAMES
+        from tests.test_pii_scan import _EXPECTED_PATTERN_NAMES
         self.assertEqual(PII_PATTERN_NAMES, _EXPECTED_PATTERN_NAMES)
 
 

@@ -1332,7 +1332,7 @@ class TestThirdPartyCorpora(unittest.TestCase):
         # ``test_pii_scan._EXPECTED_PATTERN_NAMES``. Imported here
         # rather than duplicated so that adding a pattern is a
         # one-place edit.
-        from pii_core_lib.tests.test_pii_scan import _EXPECTED_PATTERN_NAMES
+        from tests.test_pii_scan import _EXPECTED_PATTERN_NAMES
         self.assertEqual(
             PII_PATTERN_NAMES,
             _EXPECTED_PATTERN_NAMES,
