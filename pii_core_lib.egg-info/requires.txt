@@ -1,0 +1,14 @@
+
+[all]
+phonenumbers
+dateparser
+spacy
+
+[dob]
+dateparser
+
+[ner]
+spacy
+
+[phone]
+phonenumbers
