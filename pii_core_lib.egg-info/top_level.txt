@@ -1,3 +1,0 @@
-hydra_plugins
-pii_core_lib
-tests
