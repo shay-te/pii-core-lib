@@ -10,6 +10,7 @@ __pycache__/
 **/__pycache__/
 **/__pycache__/*
 
+pii_core_lib.egg-info/*
 # Editor / IDE
 .idea/
 .vscode/
