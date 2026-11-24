@@ -1,5 +1,13 @@
 # AGENTS Notes — pii-core-lib
 
+## Use only existing tools — write no new code they cover (operator, strict)
+
+Before writing any function, helper, wrapper, constant, data-access method or service, search for one that already does the job: this repo, core-lib (`core_lib/helpers/`, its decorators) and every `*-core-lib` it imports, with their Helper maps. Use it even when it is a near fit: adapt the call site, never a variant. New code only for what nothing in the workspace does, the smallest change, and the summary names what was searched. Never a copy, a thin wrapper or a second version of an existing tool.
+
+## No overbuilding (operator, strict)
+
+Build only what the task asks: no rule tables, enums, status markers, retries, background workers, config or parameters for cases the task does not name, and no flexibility "for later". The smallest code that does the job; when in doubt, leave it out.
+
 ## Zero-leak invariant (non-negotiable)
 
 `redact_preview` in `pii_core_lib.pii_patterns` returns
