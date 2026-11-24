@@ -28,10 +28,12 @@ the host app is about to hand to a model.
 from __future__ import annotations
 
 import json
-from typing import Any, List, Optional, Tuple
+import re
+from typing import Any, Iterable, List, Optional, Tuple
 
 from pii_core_lib.pii_patterns import (
     PIIPatternFinding,
+    build_person_name_regexes,
     find_pii_patterns,
     get_validator_for,
     iter_pattern_names_and_regexes,
@@ -85,8 +87,18 @@ def assert_no_pii(payload: Any) -> None:
     raise PIIDetectedError(f'PII detected in payload: {summary}')
 
 
-def _scrub_string(text: str, findings: Optional[List[PIIPatternFinding]] = None) -> str:
+def _scrub_string(
+    text: str,
+    findings: Optional[List[PIIPatternFinding]],
+    patterns: Tuple[Tuple[str, re.Pattern[str]], ...],
+    is_partial_mask: bool,
+) -> str:
     """Single-pass PII scrubber for one string.
+
+    ``patterns`` is the pattern set plus the caller's person names
+    (:func:`~pii_core_lib.pii_patterns.build_person_name_regexes`), all
+    resolved in the same pass, so a name inside an email or a URL never
+    splits its span.
 
     Iteratively-applied ``regex.sub`` calls don't work here — even
     *one* iterative pass would match the placeholder text inside the
@@ -107,7 +119,7 @@ def _scrub_string(text: str, findings: Optional[List[PIIPatternFinding]] = None)
     re-checking every pattern's case constraints.
     """
     spans: list[tuple[int, int, str, str]] = []
-    for pattern_name, regex in iter_pattern_names_and_regexes():
+    for pattern_name, regex in patterns:
         validator = get_validator_for(pattern_name)
         for match in regex.finditer(text):
             matched_text = match.group(0)
@@ -131,7 +143,7 @@ def _scrub_string(text: str, findings: Optional[List[PIIPatternFinding]] = None)
     cursor = 0
     for start, end, pattern_name, matched_text in accepted:
         out.append(text[cursor:start])
-        out.append(replacement_for(pattern_name, matched_text))
+        out.append(replacement_for(pattern_name, matched_text, is_partial_mask))
         cursor = end
         if findings is not None:
             findings.append(PIIPatternFinding(
@@ -154,11 +166,14 @@ def scrub_pii(payload: Any) -> Any:
     The function is pure — it never mutates the input, it returns a new
     container at every level.
     """
-    return _walk_and_scrub(payload, findings=None)
+    return _walk_and_scrub(payload, None, tuple(iter_pattern_names_and_regexes()), True)
 
 
 def scrub_pii_with_findings(
     payload: Any,
+    *,
+    person_names: Optional[Iterable[str]] = None,
+    is_partial_mask: bool = True,
 ) -> Tuple[List[PIIPatternFinding], Any]:
     """Single-pass scrub + report — returns ``(findings, scrubbed)``.
 
@@ -166,22 +181,30 @@ def scrub_pii_with_findings(
     but walks the payload only once. Use this when the caller needs
     both the cleaned payload AND a list of what was scrubbed (e.g., to
     audit-log detections).
+
+    ``person_names``: the names of the person the payload is about,
+    redacted as ``[redacted:person_name]`` wherever one stands as a whole
+    word. ``is_partial_mask=False``: every mark is
+    ``[redacted:<pattern>]``, keeping no part of the value.
     """
     findings: List[PIIPatternFinding] = []
-    scrubbed = _walk_and_scrub(payload, findings=findings)
+    patterns = (*iter_pattern_names_and_regexes(), *build_person_name_regexes(person_names))
+    scrubbed = _walk_and_scrub(payload, findings, patterns, is_partial_mask)
     return findings, scrubbed
 
 
 def _walk_and_scrub(
     payload: Any,
     findings: Optional[List[PIIPatternFinding]],
+    patterns: Tuple[Tuple[str, re.Pattern[str]], ...],
+    is_partial_mask: bool,
 ) -> Any:
     if isinstance(payload, str):
-        return _scrub_string(payload, findings)
+        return _scrub_string(payload, findings, patterns, is_partial_mask)
     if isinstance(payload, dict):
-        return {key: _walk_and_scrub(value, findings) for key, value in payload.items()}
+        return {key: _walk_and_scrub(value, findings, patterns, is_partial_mask) for key, value in payload.items()}
     if isinstance(payload, list):
-        return [_walk_and_scrub(value, findings) for value in payload]
+        return [_walk_and_scrub(value, findings, patterns, is_partial_mask) for value in payload]
     if isinstance(payload, tuple):
-        return tuple(_walk_and_scrub(value, findings) for value in payload)
+        return tuple(_walk_and_scrub(value, findings, patterns, is_partial_mask) for value in payload)
     return payload

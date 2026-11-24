@@ -20,6 +20,13 @@ Both methods share the same knobs:
     silently disappear.
   * ``context`` — short label woven into the audit log + raised-error
     message so operators can locate the source.
+  * ``person_names`` — the names of the person the payload is about
+    (their first and last name); each is redacted as
+    ``[redacted:person_name]`` wherever it stands as a whole word.
+
+``scrub`` alone also takes ``is_partial_mask``: ``False`` makes every mark
+``[redacted:<pattern>]``, keeping no part of a value (no email host, phone
+country code or card digits) — for text shown outside its owner.
 
 Callers needing the granular surface (single-pattern detection, NER,
 category lookups, replacement-mask strategies) import directly from
@@ -30,7 +37,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 from pii_core_lib.pii_patterns import (
     PIIPatternFinding,
@@ -60,6 +67,7 @@ class PiiService(object):
         raise_on_pii: bool = False,
         audit_logger: Optional[logging.Logger] = None,
         context: str = 'payload',
+        person_names: Optional[Iterable[str]] = None,
     ) -> List[PIIPatternFinding]:
         """Scan ``payload`` and report what was found — do NOT modify it.
 
@@ -81,6 +89,9 @@ class PiiService(object):
                 module logger so detections never disappear.
             context: short label woven into the audit log so operators
                 can locate the source (e.g. ``'admin_chat_response'``).
+            person_names: names of the person the payload is about,
+                reported as ``person_name`` wherever one stands as a
+                whole word. ``None`` / blank values / initials are skipped.
 
         Returns:
             The list of :class:`PIIPatternFinding` (empty when clean).
@@ -96,6 +107,8 @@ class PiiService(object):
             raise_on_pii=raise_on_pii,
             audit_logger=audit_logger,
             context=context,
+            person_names=person_names,
+            is_partial_mask=True,
         )
         return findings
 
@@ -107,6 +120,8 @@ class PiiService(object):
         raise_on_pii: bool = False,
         audit_logger: Optional[logging.Logger] = None,
         context: str = 'payload',
+        person_names: Optional[Iterable[str]] = None,
+        is_partial_mask: bool = True,
     ) -> Any:
         """Scan ``payload`` and return a scrubbed copy.
 
@@ -116,7 +131,10 @@ class PiiService(object):
         ``None`` / dates / Decimals / UUIDs) pass through unchanged.
         The input object is never mutated.
 
-        Args / Raises: see :meth:`validate`.
+        Args / Raises: see :meth:`validate`, plus ``is_partial_mask``:
+        ``True`` keeps the per-pattern masks (an email's host, a phone's
+        country code, a card's last four digits); ``False`` makes every
+        mark ``[redacted:<pattern>]``.
 
         Returns:
             A new payload safe to forward to the LLM / a downstream
@@ -130,6 +148,8 @@ class PiiService(object):
             raise_on_pii=raise_on_pii,
             audit_logger=audit_logger,
             context=context,
+            person_names=person_names,
+            is_partial_mask=is_partial_mask,
         )
         return scrubbed
 
@@ -141,6 +161,8 @@ class PiiService(object):
         raise_on_pii: bool,
         audit_logger: Optional[logging.Logger],
         context: str,
+        person_names: Optional[Iterable[str]],
+        is_partial_mask: bool,
     ) -> Tuple[List[PIIPatternFinding], Any]:
         """Shared core for :meth:`validate` and :meth:`scrub`.
 
@@ -149,7 +171,8 @@ class PiiService(object):
         identical on both paths so a switch from ``validate`` to ``scrub``
         cannot change which detections an operator sees.
         """
-        findings, scrubbed = scrub_pii_with_findings(payload)
+        findings, scrubbed = scrub_pii_with_findings(
+            payload, person_names=person_names, is_partial_mask=is_partial_mask)
         if strict:
             findings = findings + self._strict_only_findings(payload)
         if findings:

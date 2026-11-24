@@ -61,7 +61,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
+
+# The pattern name of a name the caller says belongs to the person a text is about; the NER detector uses it too.
+PERSON_NAME_PATTERN_NAME = 'person_name'
+# An initial is skipped: a one-letter name would redact every lone word of that letter ("a", "I").
+PERSON_NAME_MIN_LENGTH = 2
 
 
 @dataclass(frozen=True)
@@ -636,12 +641,16 @@ _PATTERN_REPLACEMENTS = {
 }
 
 
-def replacement_for(pattern_name: str, matched_text: str) -> str:
+def replacement_for(pattern_name: str, matched_text: str, is_partial_mask: bool = True) -> str:
     """Return the scrubber replacement for one match.
 
     Per-pattern strategy from :data:`_PATTERN_REPLACEMENTS`; default is
-    ``[redacted:<pattern_name>]``.
+    ``[redacted:<pattern_name>]``. ``is_partial_mask=False`` skips the
+    strategies, so no part of the value (an email host, a phone country
+    code, a card's last four digits) is kept.
     """
+    if not is_partial_mask:
+        return f'[redacted:{pattern_name}]'
     strategy = _PATTERN_REPLACEMENTS.get(pattern_name)
     if strategy is None:
         return f'[redacted:{pattern_name}]'
@@ -726,6 +735,27 @@ def get_validator_for(pattern_name: str):
     :func:`find_pii_patterns` does.
     """
     return _PATTERN_VALIDATORS.get(pattern_name)
+
+
+def build_person_name_regexes(person_names: Optional[Iterable[str]]) -> Tuple[Tuple[str, re.Pattern[str]], ...]:
+    """``(PERSON_NAME_PATTERN_NAME, regex)`` pairs for the names the caller
+    says belong to the person a text is about (their first and last name).
+
+    Each name matches as a whole word, in any case and any script: a name
+    inside a longer word ("Dan" in "Danger") is kept. ``None``, blank values
+    and initials are skipped. The scrubber resolves these matches with the
+    pattern set in its one pass.
+    """
+    regexes = []
+    for person_name in person_names or ():
+        if person_name is None:
+            continue
+        stripped_name = person_name.strip()
+        if len(stripped_name) < PERSON_NAME_MIN_LENGTH:
+            continue
+        regex = re.compile(rf'(?<!\w){re.escape(stripped_name)}(?!\w)', re.IGNORECASE)
+        regexes.append((PERSON_NAME_PATTERN_NAME, regex))
+    return tuple(regexes)
 
 
 def find_pii_strict(

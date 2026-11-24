@@ -10,8 +10,12 @@ JSON-shaped payload, packaged as a `core-lib` consumer.
   * `validate(payload, ...) -> List[PIIPatternFinding]` — scan only.
   * `scrub(payload, ...) -> Any` — scan + return a cleaned copy.
 
-  Both share four knobs: `strict` / `raise_on_pii` / `audit_logger` /
-  `context`.
+  Both share five knobs: `strict` / `raise_on_pii` / `audit_logger` /
+  `context` / `person_names` (the names of the person the payload is
+  about, each redacted as `[redacted:person_name]` wherever it stands
+  as a whole word). `scrub` also takes `is_partial_mask`: `False` makes
+  every mark `[redacted:<pattern>]`, keeping no part of a value (no
+  email host, phone country code or card digits).
 
 * **`pii_core_lib.pii_patterns`** — the canonical pattern set (150+
   named PII families, US + intl gov IDs, crypto chains, postcodes,
