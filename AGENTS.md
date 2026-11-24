@@ -22,15 +22,19 @@ Tests that lock the invariant:
 so a switch from one to the other cannot change which detections an
 operator sees. Logging + raising is identical on both paths.
 
-## Caller strings ride the same single pass, and every mark is full
+## Caller strings ride the same single pass; marks are full unless asked
 
 - `strings_to_scrub` (both entry points): the library never knows what the strings are (a name, a customer code, ...);
   the caller passes them. Each becomes a literal whole-word, case-insensitive, any-script regex
   (`build_string_regexes`, pattern `custom_string`) resolved with the pattern set in `_scrub_string`'s one pass, so a
   string inside an email or URL never splits it and a placeholder is never re-matched. `None`, blank and
   one-character values are skipped. A string glued to a prefix (Hebrew "ודנה") is kept.
-- Every mark is full, `replacement_for(pattern_name)` = `[redacted:<pattern>]` (operator): no partial mask exists, so no
-  mark keeps an email host, a phone country code, a card's last 4 or a coarse GPS. Never add one back, or a flag for it.
+- **Full mark by default, partial only when the caller asks (operator).** `replacement_for(pattern_name, matched_text,
+  is_partial_mask=False)` gives `[redacted:<pattern>]`: delete user, tables, saved chat and errors all stay full.
+  `is_partial_mask=True` (`scrub` only) keeps a clue for exactly three patterns: an email's host, a phone's country code
+  and GPS at region precision (`_PARTIAL_MASKS`); it is for the data a matchmaker reads through the AI, so she keeps a
+  clue. A credit card is always full, never its last 4. A new partial mark needs the operator's say, and its
+  replacement must not re-match its own pattern (`TestReplacementsDoNotReMatch`).
 - NER (`_pii_ner`, spaCy, English only) only reports findings; it is not part of `scrub`.
 - A tie (same start and length) goes to the pattern declared first, and the shape-only patterns are broad: a 9-digit
   number marks as `us_passport`; 5-8 uppercase letters, digits, spaces or dashes (`DANA ` too) as `us_license_plate`,

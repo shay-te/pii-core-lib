@@ -21,7 +21,7 @@ class TestPiiStringsToScrub(unittest.TestCase):
         self.assertEqual(f'{NAME_MARK} {NAME_MARK} loves hiking', scrubbed)
 
     def test_a_name_matches_in_any_case(self):
-        scrubbed = self.pii_service.scrub('DANA and dana', strings_to_scrub=['Dana'])
+        scrubbed = self.pii_service.scrub('ELI and eli', strings_to_scrub=['Eli'])
         self.assertEqual(f'{NAME_MARK} and {NAME_MARK}', scrubbed)
 
     def test_a_hebrew_name_is_redacted(self):

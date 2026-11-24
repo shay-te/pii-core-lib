@@ -13,8 +13,10 @@ JSON-shaped payload, packaged as a `core-lib` consumer.
   Both share five knobs: `strict` / `raise_on_pii` / `audit_logger` /
   `context` / `strings_to_scrub` (literal strings to scrub besides the
   patterns, each redacted as `[redacted:custom_string]` wherever it
-  stands as a whole word). Every mark is `[redacted:<pattern>]`: no part of
-  a value is kept (no email host, phone country code or card digits).
+  stands as a whole word). Every mark is `[redacted:<pattern>]` by default:
+  no part of a value is kept. `scrub` alone takes `is_partial_mask=True`
+  to keep a clue (an email's host, a phone's country code, GPS at region
+  precision); a credit card is always full.
 
 * **`pii_core_lib.pii_patterns`** — the canonical pattern set (150+
   named PII families, US + intl gov IDs, crypto chains, postcodes,

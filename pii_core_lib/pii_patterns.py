@@ -578,12 +578,71 @@ def category_for(pattern_name: str):
     return _PATTERN_CATEGORIES.get(pattern_name)
 
 
-def replacement_for(pattern_name: str) -> str:
-    """Return the scrubber replacement for one match: ``[redacted:<pattern_name>]``.
+# Partial marks, only for a caller that asks (``is_partial_mask=True``): each keeps a clue of the value, and its
+# replacement must NOT re-match its own pattern (the round-trip ``scrub_pii → assert_no_pii`` flow depends on this).
+#
+#   * ``phone``:       ``[redacted:phone:+1]`` (country code only)
+#   * ``email``:       ``[redacted:email:host=example.com]`` (host, no ``@``)
+#   * ``gps_coordinates``: ``[redacted:gps_coordinates:37.4,-122.1]``
+#     (1-decimal precision — ~11 km, region-scale).
+#
+# A credit card has none: it is always ``[redacted:credit_card]``, never its last four digits.
 
-    Every mark is full: no part of the value (an email host, a phone country
-    code, a card's last four digits) is kept.
+
+def _mask_phone_country_code(matched_text: str) -> str:
+    stripped = matched_text.lstrip()
+    if stripped.startswith('+'):
+        country_digits = []
+        for char in stripped[1:]:
+            if char.isdigit() and len(country_digits) < 3:
+                country_digits.append(char)
+            elif char.isdigit():
+                break
+            elif country_digits:
+                break
+        if country_digits:
+            return f'[redacted:phone:+{"".join(country_digits)}]'
+    return '[redacted:phone]'
+
+
+def _mask_email_host(matched_text: str) -> str:
+    # ``@`` deliberately dropped so the replacement doesn't re-match the
+    # email regex on a second pass.
+    at_index = matched_text.rfind('@')
+    if at_index == -1:
+        return '[redacted:email]'
+    return f'[redacted:email:host={matched_text[at_index + 1:]}]'
+
+
+def _mask_gps_low_precision(matched_text: str) -> str:
+    coordinate_match = re.match(
+        r'\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)', matched_text,
+    )
+    if not coordinate_match:
+        return '[redacted:gps_coordinates]'
+    latitude = float(coordinate_match.group(1))
+    longitude = float(coordinate_match.group(2))
+    return f'[redacted:gps_coordinates:{latitude:.1f},{longitude:.1f}]'
+
+
+_PARTIAL_MASKS = {
+    'phone': _mask_phone_country_code,
+    'email': _mask_email_host,
+    'gps_coordinates': _mask_gps_low_precision,
+}
+
+
+def replacement_for(pattern_name: str, matched_text: str, is_partial_mask: bool = False) -> str:
+    """Return the scrubber replacement for one match.
+
+    Full by default: ``[redacted:<pattern_name>]``, nothing of the value kept.
+    ``is_partial_mask=True`` keeps a clue for an email (its host), a phone
+    (its country code) and GPS coordinates (region precision); every other
+    pattern, a credit card included, stays full.
     """
+    partial_mask = _PARTIAL_MASKS.get(pattern_name)
+    if is_partial_mask and partial_mask is not None:
+        return partial_mask(matched_text)
     return f'[redacted:{pattern_name}]'
 
 

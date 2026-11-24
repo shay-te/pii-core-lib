@@ -24,11 +24,14 @@ Both methods share the same knobs:
     each is redacted as ``[redacted:custom_string]`` wherever it stands as
     a whole word, in any case.
 
-Every mark is ``[redacted:<pattern>]``: no part of a value is kept (no email
-host, phone country code or card digits).
+Every mark is ``[redacted:<pattern>]`` by default: no part of a value is kept
+(no email host, phone country code or card digits). ``scrub`` alone takes
+``is_partial_mask=True`` for a reader who needs a clue of the value: it keeps
+an email's host, a phone's country code and GPS coordinates at region
+precision. A credit card is always full.
 
 Callers needing the granular surface (single-pattern detection, NER,
-category lookups, the replacement mark) import directly from
+category lookups, the replacement marks) import directly from
 ``pii_core_lib.*`` — the package is the advanced API, the
 service is the easy one.
 """
@@ -120,6 +123,7 @@ class PiiService(object):
         audit_logger: Optional[logging.Logger] = None,
         context: str = 'payload',
         strings_to_scrub: Optional[Iterable[str]] = None,
+        is_partial_mask: bool = False,
     ) -> Any:
         """Scan ``payload`` and return a scrubbed copy.
 
@@ -129,7 +133,9 @@ class PiiService(object):
         ``None`` / dates / Decimals / UUIDs) pass through unchanged.
         The input object is never mutated.
 
-        Args / Raises: see :meth:`validate`.
+        Args / Raises: see :meth:`validate`, plus ``is_partial_mask``:
+        ``False`` (the default) makes every mark full; ``True`` keeps the
+        clues listed in the module docstring.
 
         Returns:
             A new payload safe to forward to the LLM / a downstream
@@ -144,6 +150,7 @@ class PiiService(object):
             audit_logger=audit_logger,
             context=context,
             strings_to_scrub=strings_to_scrub,
+            is_partial_mask=is_partial_mask,
         )
         return scrubbed
 
@@ -156,6 +163,7 @@ class PiiService(object):
         audit_logger: Optional[logging.Logger],
         context: str,
         strings_to_scrub: Optional[Iterable[str]],
+        is_partial_mask: bool = False,
     ) -> Tuple[List[PIIPatternFinding], Any]:
         """Shared core for :meth:`validate` and :meth:`scrub`.
 
@@ -164,7 +172,8 @@ class PiiService(object):
         identical on both paths so a switch from ``validate`` to ``scrub``
         cannot change which detections an operator sees.
         """
-        findings, scrubbed = scrub_pii_with_findings(payload, strings_to_scrub=strings_to_scrub)
+        findings, scrubbed = scrub_pii_with_findings(
+            payload, strings_to_scrub=strings_to_scrub, is_partial_mask=is_partial_mask)
         if strict:
             findings = findings + self._strict_only_findings(payload)
         if findings:
