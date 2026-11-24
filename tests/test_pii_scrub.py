@@ -76,14 +76,12 @@ class AssertNoPiiTests(unittest.TestCase):
 
 class ScrubPiiTests(unittest.TestCase):
     def test_email_in_string_is_replaced(self):
-        # The per-pattern replacement strategy preserves the host
-        # without the ``@`` (``[redacted:email:host=example.com]``)
-        # so the model can reason about the email's domain without
-        # seeing the local part — and so the replacement text itself
-        # doesn't re-match the email regex on a subsequent pass.
+        # The mark keeps nothing of the address (``[redacted:email]``), so
+        # the replacement text itself doesn't re-match the email regex on a
+        # subsequent pass.
         scrubbed = scrub_pii('reach out to jane@example.com please')
         self.assertNotIn('jane@example.com', scrubbed)
-        self.assertIn('[redacted:email:host=example.com]', scrubbed)
+        self.assertIn('[redacted:email]', scrubbed)
 
     def test_dict_is_walked_recursively(self):
         payload = {
@@ -121,12 +119,11 @@ class ScrubPiiTests(unittest.TestCase):
         # The scrubber must respect the same per-pattern validators
         # that ``find_pii_patterns`` applies. A Luhn-INVALID PAN-shape
         # number must NOT be redacted as ``credit_card``; a Luhn-VALID
-        # one (the canonical Visa test PAN) MUST be redacted (with
-        # the per-pattern last-4 mask applied).
+        # one (the canonical Visa test PAN) MUST be redacted.
         scrubbed_invalid = scrub_pii('order id 1234567890123456 today')
         self.assertNotIn('redacted:credit_card', scrubbed_invalid)
         scrubbed_valid = scrub_pii('paid with 4111111111111111 yesterday')
-        self.assertIn('[redacted:credit_card:****1111]', scrubbed_valid)
+        self.assertIn('[redacted:credit_card]', scrubbed_valid)
         self.assertNotIn('4111111111111111', scrubbed_valid)
 
     def test_url_with_embedded_email_redacts_to_url_only(self):

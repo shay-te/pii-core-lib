@@ -61,7 +61,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
+
+# The pattern name of a string the caller asks to scrub.
+STRING_TO_SCRUB_PATTERN_NAME = 'custom_string'
+# A one-character string is skipped: it would redact every lone word of that letter ("a", "I").
+STRING_MIN_LENGTH = 2
 
 
 @dataclass(frozen=True)
@@ -82,8 +87,7 @@ class PIIPatternFinding(object):
 # mastodon_handle (scrubadub), uk_utr (scrubadub),
 # credit_card+SSN+IBAN+ABA+VIN checksums (Presidio), the per-state US
 # driver's-license shape union (scrubadub), pii-codex severity tiers
-# (see _PATTERN_CATEGORIES below), scrubadub-style per-pattern
-# replacement strategy (see _PATTERN_REPLACEMENTS below).
+# (see _PATTERN_CATEGORIES below).
 #
 # Documented gaps (need a new dep):
 #   * phonenumbers-backed phone validation (kills the loose
@@ -574,22 +578,15 @@ def category_for(pattern_name: str):
     return _PATTERN_CATEGORIES.get(pattern_name)
 
 
-# Per-pattern replacement strategies. Default (no entry) → full
-# redaction ``[redacted:<name>]``. Each strategy must produce a
-# replacement that does NOT re-match its own pattern (the round-trip
-# ``scrub_pii → assert_no_pii`` flow depends on this).
+# Partial marks, only for a caller that asks (``is_partial_mask=True``): each keeps a clue of the value, and its
+# replacement must NOT re-match its own pattern (the round-trip ``scrub_pii → assert_no_pii`` flow depends on this).
 #
-#   * ``credit_card``: ``[redacted:credit_card:****1234]`` (last 4)
 #   * ``phone``:       ``[redacted:phone:+1]`` (country code only)
 #   * ``email``:       ``[redacted:email:host=example.com]`` (host, no ``@``)
 #   * ``gps_coordinates``: ``[redacted:gps_coordinates:37.4,-122.1]``
 #     (1-decimal precision — ~11 km, region-scale).
-
-
-def _mask_credit_card_last_four(matched_text: str) -> str:
-    digits = ''.join(ch for ch in matched_text if ch.isdigit())
-    last_four = digits[-4:] if len(digits) >= 4 else digits
-    return f'[redacted:credit_card:****{last_four}]'
+#
+# A credit card has none: it is always ``[redacted:credit_card]``, never its last four digits.
 
 
 def _mask_phone_country_code(matched_text: str) -> str:
@@ -628,24 +625,25 @@ def _mask_gps_low_precision(matched_text: str) -> str:
     return f'[redacted:gps_coordinates:{latitude:.1f},{longitude:.1f}]'
 
 
-_PATTERN_REPLACEMENTS = {
-    'credit_card': _mask_credit_card_last_four,
+_PARTIAL_MASKS = {
     'phone': _mask_phone_country_code,
     'email': _mask_email_host,
     'gps_coordinates': _mask_gps_low_precision,
 }
 
 
-def replacement_for(pattern_name: str, matched_text: str) -> str:
+def replacement_for(pattern_name: str, matched_text: str, is_partial_mask: bool = False) -> str:
     """Return the scrubber replacement for one match.
 
-    Per-pattern strategy from :data:`_PATTERN_REPLACEMENTS`; default is
-    ``[redacted:<pattern_name>]``.
+    Full by default: ``[redacted:<pattern_name>]``, nothing of the value kept.
+    ``is_partial_mask=True`` keeps a clue for an email (its host), a phone
+    (its country code) and GPS coordinates (region precision); every other
+    pattern, a credit card included, stays full.
     """
-    strategy = _PATTERN_REPLACEMENTS.get(pattern_name)
-    if strategy is None:
-        return f'[redacted:{pattern_name}]'
-    return strategy(matched_text)
+    partial_mask = _PARTIAL_MASKS.get(pattern_name)
+    if is_partial_mask and partial_mask is not None:
+        return partial_mask(matched_text)
+    return f'[redacted:{pattern_name}]'
 
 
 def redact_preview(matched_text: str) -> str:
@@ -726,6 +724,27 @@ def get_validator_for(pattern_name: str):
     :func:`find_pii_patterns` does.
     """
     return _PATTERN_VALIDATORS.get(pattern_name)
+
+
+def build_string_regexes(strings_to_scrub: Optional[Iterable[str]]) -> Tuple[Tuple[str, re.Pattern[str]], ...]:
+    """``(STRING_TO_SCRUB_PATTERN_NAME, regex)`` pairs for the strings the
+    caller asks to scrub.
+
+    Each string matches literally, as a whole word, in any case and any
+    script: one inside a longer word ("Dan" in "Danger") is kept. ``None``,
+    blank values and one-character strings are skipped. The scrubber
+    resolves these matches with the pattern set in its one pass.
+    """
+    regexes = []
+    for string_to_scrub in strings_to_scrub or ():
+        if string_to_scrub is None:
+            continue
+        stripped_string = string_to_scrub.strip()
+        if len(stripped_string) < STRING_MIN_LENGTH:
+            continue
+        regex = re.compile(rf'(?<!\w){re.escape(stripped_string)}(?!\w)', re.IGNORECASE)
+        regexes.append((STRING_TO_SCRUB_PATTERN_NAME, regex))
+    return tuple(regexes)
 
 
 def find_pii_strict(

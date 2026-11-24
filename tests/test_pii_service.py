@@ -130,7 +130,7 @@ class TestScrubReturnsCleanedCopy(unittest.TestCase):
     def test_email_in_dict_is_scrubbed(self):
         scrubbed = self.service.scrub({'note': 'reach jane@example.com'})
         self.assertNotIn('jane@example.com', scrubbed['note'])
-        self.assertIn('[redacted:email:host=example.com]', scrubbed['note'])
+        self.assertIn('[redacted:email]', scrubbed['note'])
 
     def test_nested_payload_is_walked(self):
         scrubbed = self.service.scrub({

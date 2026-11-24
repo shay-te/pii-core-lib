@@ -1,16 +1,17 @@
-"""Tests for the severity-tier categories and per-pattern replacement
-strategies — the two structural follow-ups borrowed from pii-codex
-(tiering) and scrubadub (per-type ``FilthReplacer``).
+"""Tests for the severity-tier categories and the per-pattern replacement
+marks — the two structural follow-ups borrowed from pii-codex (tiering) and
+scrubadub (per-type ``FilthReplacer``).
 
 Three layers of coverage:
 
 * :class:`TestCategoryFor` — every locked pattern name is tier-classified;
   the lookup function returns the right category; unknown names return
   ``None``.
-* :class:`TestReplacementFor` — the default fall-through replacement and
-  every registered per-pattern strategy.
-* :class:`TestReplacementsDoNotReMatch` — the masked replacement
-  strings must NOT re-match the same pattern (the round-trip property
+* :class:`TestReplacementFor` — a mark is full, ``[redacted:<name>]``, by
+  default; the partial marks are on request and only for an email, a phone
+  and GPS coordinates.
+* :class:`TestReplacementsDoNotReMatch` — every mark, full or partial, must
+  NOT re-match the same pattern (the round-trip property
   ``scrub_pii → find_pii_patterns → []`` is what the chat boundary
   relies on).
 """
@@ -80,114 +81,116 @@ class TestCategoryFor(unittest.TestCase):
 
 
 class TestReplacementFor(unittest.TestCase):
-    def test_default_replacement_for_unmapped_pattern(self):
-        # Patterns without a registered strategy fall through to the
-        # generic ``[redacted:<name>]`` placeholder.
+    def test_every_mark_is_full_by_default(self):
+        originals = {
+            'ssn': '123-45-6789',
+            'credit_card': '4111 1111 1111 1234',
+            'phone': '+1 555 123 4567',
+            'email': 'jane@example.com',
+            'gps_coordinates': '37.4220, -122.0841',
+        }
+        for pattern_name, original in originals.items():
+            with self.subTest(pattern=pattern_name):
+                self.assertEqual(replacement_for(pattern_name, original), f'[redacted:{pattern_name}]')
+
+    def test_a_credit_card_stays_full_even_when_partial_marks_are_asked(self):
         self.assertEqual(
-            replacement_for('ssn', '123-45-6789'),
+            replacement_for('credit_card', '4111 1111 1111 1234', is_partial_mask=True),
+            '[redacted:credit_card]',
+        )
+
+    def test_a_pattern_without_a_partial_mark_stays_full_when_asked(self):
+        self.assertEqual(
+            replacement_for('ssn', '123-45-6789', is_partial_mask=True),
             '[redacted:ssn]',
         )
-        self.assertEqual(
-            replacement_for('us_passport', 'A12345678'),
-            '[redacted:us_passport]',
-        )
 
-    def test_credit_card_replacement_masks_last_four(self):
+    def test_phone_partial_mark_keeps_country_code(self):
         self.assertEqual(
-            replacement_for('credit_card', '4111 1111 1111 1234'),
-            '[redacted:credit_card:****1234]',
-        )
-        self.assertEqual(
-            replacement_for('credit_card', '4111-1111-1111-9876'),
-            '[redacted:credit_card:****9876]',
-        )
-
-    def test_phone_replacement_keeps_country_code(self):
-        self.assertEqual(
-            replacement_for('phone', '+1 555 123 4567'),
+            replacement_for('phone', '+1 555 123 4567', is_partial_mask=True),
             '[redacted:phone:+1]',
         )
         self.assertEqual(
-            replacement_for('phone', '+44 20 7946 0958'),
+            replacement_for('phone', '+44 20 7946 0958', is_partial_mask=True),
             '[redacted:phone:+44]',
         )
 
-    def test_phone_replacement_without_country_code(self):
-        # No ``+`` prefix — fall back to the generic placeholder.
+    def test_phone_partial_mark_without_country_code(self):
+        # No ``+`` prefix — fall back to the full mark.
         self.assertEqual(
-            replacement_for('phone', '555 123 4567'),
+            replacement_for('phone', '555 123 4567', is_partial_mask=True),
             '[redacted:phone]',
         )
 
-    def test_phone_replacement_truncates_country_code_at_three_digits(self):
+    def test_phone_partial_mark_truncates_country_code_at_three_digits(self):
         # The longest published country code is 3 digits (``+972``,
         # ``+233``). The collector caps at 3 to avoid spilling into
         # the subscriber number.
         self.assertEqual(
-            replacement_for('phone', '+9725012345678'),
+            replacement_for('phone', '+9725012345678', is_partial_mask=True),
             '[redacted:phone:+972]',
         )
 
-    def test_phone_replacement_stops_at_separator_after_country_code(self):
+    def test_phone_partial_mark_stops_at_separator_after_country_code(self):
         # A space after the country code marks the boundary; the
         # collector breaks out without consuming the subscriber digits.
         self.assertEqual(
-            replacement_for('phone', '+1 5551234567'),
+            replacement_for('phone', '+1 5551234567', is_partial_mask=True),
             '[redacted:phone:+1]',
         )
 
-    def test_phone_replacement_only_plus_no_digits_falls_back(self):
+    def test_phone_partial_mark_only_plus_no_digits_falls_back(self):
         # Just a ``+`` with no digits afterwards (the regex wouldn't
         # produce this in practice, but the helper is defensive).
         self.assertEqual(
-            replacement_for('phone', '+abc'),
+            replacement_for('phone', '+abc', is_partial_mask=True),
             '[redacted:phone]',
         )
 
-    def test_phone_replacement_exhausts_input_in_country_code(self):
+    def test_phone_partial_mark_exhausts_input_in_country_code(self):
         # The for-loop hits the end of the string before any
         # separator — exercises the normal loop-exit path.
         self.assertEqual(
-            replacement_for('phone', '+1'),
+            replacement_for('phone', '+1', is_partial_mask=True),
             '[redacted:phone:+1]',
         )
 
-    def test_email_replacement_without_at_falls_back(self):
+    def test_email_partial_mark_without_at_falls_back(self):
         # Defensive fallback: a "matched" string with no ``@`` (the
         # regex shouldn't produce this, but ``replacement_for`` is
-        # callable directly) returns the generic placeholder.
+        # callable directly) returns the full mark.
         self.assertEqual(
-            replacement_for('email', 'no-at-sign-here'),
+            replacement_for('email', 'no-at-sign-here', is_partial_mask=True),
             '[redacted:email]',
         )
 
-    def test_email_replacement_keeps_host_without_at(self):
+    def test_email_partial_mark_keeps_host_without_at(self):
         # The ``@`` is intentionally omitted so the replacement text
         # doesn't re-match the email regex on a second pass.
         self.assertEqual(
-            replacement_for('email', 'jane@example.com'),
+            replacement_for('email', 'jane@example.com', is_partial_mask=True),
             '[redacted:email:host=example.com]',
         )
 
-    def test_gps_replacement_reduces_precision(self):
+    def test_gps_partial_mark_reduces_precision(self):
         self.assertEqual(
-            replacement_for('gps_coordinates', '37.4220, -122.0841'),
+            replacement_for('gps_coordinates', '37.4220, -122.0841', is_partial_mask=True),
             '[redacted:gps_coordinates:37.4,-122.1]',
         )
 
-    def test_gps_replacement_unparseable_falls_back(self):
+    def test_gps_partial_mark_unparseable_falls_back(self):
         self.assertEqual(
-            replacement_for('gps_coordinates', 'not coordinates'),
+            replacement_for('gps_coordinates', 'not coordinates', is_partial_mask=True),
             '[redacted:gps_coordinates]',
         )
 
 
 class TestReplacementsDoNotReMatch(unittest.TestCase):
-    """Critical round-trip property: the replacement string emitted
-    by every per-pattern strategy must NOT itself match the same
-    pattern. The chat boundary's audit path uses ``scrub_pii`` then
-    ``assert_no_pii`` — if the replacement re-matched, the audit
-    would fail on the very output the scrubber produced.
+    """Critical round-trip property: the replacement string emitted for
+    a pattern, full or partial, must NOT itself match the same pattern.
+    The chat boundary's audit path uses ``scrub_pii`` then
+    ``assert_no_pii`` — if the replacement re-matched, the audit would
+    fail on the very output the scrubber produced.
     """
 
     _ROUND_TRIPS = (
@@ -198,22 +201,19 @@ class TestReplacementsDoNotReMatch(unittest.TestCase):
     )
 
     def test_replacement_does_not_re_match_its_own_pattern(self):
-        for pattern_name, original in self._ROUND_TRIPS:
-            with self.subTest(pattern=pattern_name):
-                replacement = replacement_for(pattern_name, original)
-                round_trip = find_pii_patterns(replacement)
-                same_pattern_hits = [
-                    finding.pattern_name for finding in round_trip
-                    if finding.pattern_name == pattern_name
-                ]
-                self.assertEqual(
-                    same_pattern_hits, [],
-                    f'{pattern_name} replacement {replacement!r} re-matches '
-                    f'its own pattern — round-trip ``scrub_pii → '
-                    f'find_pii_patterns`` would loop forever / re-trigger '
-                    f'the audit.',
-                )
-
-
-if __name__ == '__main__':
-    unittest.main()
+        for is_partial_mask in (False, True):
+            for pattern_name, original in self._ROUND_TRIPS:
+                with self.subTest(pattern=pattern_name, is_partial_mask=is_partial_mask):
+                    replacement = replacement_for(pattern_name, original, is_partial_mask=is_partial_mask)
+                    round_trip = find_pii_patterns(replacement)
+                    same_pattern_hits = [
+                        finding.pattern_name for finding in round_trip
+                        if finding.pattern_name == pattern_name
+                    ]
+                    self.assertEqual(
+                        same_pattern_hits, [],
+                        f'{pattern_name} replacement {replacement!r} re-matches '
+                        f'its own pattern — round-trip ``scrub_pii → '
+                        f'find_pii_patterns`` would loop forever / re-trigger '
+                        f'the audit.',
+                    )

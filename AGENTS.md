@@ -22,6 +22,35 @@ Tests that lock the invariant:
 so a switch from one to the other cannot change which detections an
 operator sees. Logging + raising is identical on both paths.
 
+## Caller strings ride the same single pass; marks are full unless asked
+
+- `strings_to_scrub` (both entry points): the library never knows what the strings are (a name, a customer code, ...);
+  the caller passes them. Each becomes a literal whole-word, case-insensitive, any-script regex
+  (`build_string_regexes`, pattern `custom_string`) resolved with the pattern set in `_scrub_string`'s one pass, so a
+  string inside an email or URL never splits it and a placeholder is never re-matched. `None`, blank and
+  one-character values are skipped. A string glued to a prefix (Hebrew "ודנה") is kept.
+- **Full mark by default, partial only when the caller asks (operator).** `replacement_for(pattern_name, matched_text,
+  is_partial_mask=False)` gives `[redacted:<pattern>]`: delete user, tables, saved chat and errors all stay full.
+  `is_partial_mask=True` (`scrub` only) keeps a clue for exactly three patterns: an email's host, a phone's country code
+  and GPS at region precision (`_PARTIAL_MASKS`); it is for the data a matchmaker reads through the AI, so she keeps a
+  clue. A credit card is always full, never its last 4. A new partial mark needs the operator's say, and its
+  replacement must not re-match its own pattern (`TestReplacementsDoNotReMatch`).
+- NER (`_pii_ner`, spaCy, English only) only reports findings; it is not part of `scrub`.
+- A tie (same start and length) goes to the pattern declared first, and the shape-only patterns are broad: a 9-digit
+  number marks as `us_passport`; 5-8 uppercase letters, digits, spaces or dashes (`DANA ` too) as `us_license_plate`,
+  before a name; a lone 5-digit number as `us_zip`. A test pinning an exact mark picks a value one pattern alone matches; else it asserts the raw
+  value is gone.
+
+## Helper map
+
+- `data_layers/service/pii_service.py` — `PiiService.scrub` (cleaned copy) / `PiiService.validate` (findings only).
+- `pii_scrub.py` — `scrub_pii`, `scrub_pii_with_findings` (one walk, findings + copy), `find_pii_in_payload`,
+  `assert_no_pii`, `PIIDetectedError`.
+- `pii_patterns.py` — `find_pii_patterns`, `find_pii_strict`, `replacement_for`, `redact_preview`, `category_for`,
+  `summarize_pii_findings`, `iter_pattern_names_and_regexes`, `get_validator_for`, `build_string_regexes`;
+  constants `PII_PATTERN_NAMES`, `STRING_TO_SCRUB_PATTERN_NAME`, `STRING_MIN_LENGTH`, `CATEGORY_*`.
+- `pii_scan.py` — text-stream WARNING-log helper; `credential_scan.py` / `credential_patterns.py` — vendor secrets.
+
 ## Empty `__init__.py` per package
 
 Per the workspace rule, every package `__init__.py` is empty — no
