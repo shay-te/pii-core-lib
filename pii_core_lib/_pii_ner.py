@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import List
 
-from pii_core_lib.pii_patterns import PERSON_NAME_PATTERN_NAME, PIIPatternFinding, redact_preview
+from pii_core_lib.pii_patterns import PIIPatternFinding, redact_preview
 
 
 class SpacyNotInstalledError(RuntimeError):
@@ -36,7 +36,7 @@ _LOADED_NLP = None
 # (a date is only PII when it's a DOB — covered by ``dob_strict`` —
 # and money / percent / etc. are not PII at all).
 _ENTITY_TO_PATTERN = {
-    'PERSON': PERSON_NAME_PATTERN_NAME,
+    'PERSON': 'person_name',
     'ORG': 'organization_name',
     'GPE': 'location',   # countries, cities, states
     'LOC': 'location',   # non-GPE places (mountain ranges, water bodies)

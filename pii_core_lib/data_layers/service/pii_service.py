@@ -20,16 +20,15 @@ Both methods share the same knobs:
     silently disappear.
   * ``context`` — short label woven into the audit log + raised-error
     message so operators can locate the source.
-  * ``person_names`` — the names of the person the payload is about
-    (their first and last name); each is redacted as
-    ``[redacted:person_name]`` wherever it stands as a whole word.
+  * ``strings_to_scrub`` — literal strings to scrub besides the patterns;
+    each is redacted as ``[redacted:custom_string]`` wherever it stands as
+    a whole word, in any case.
 
-``scrub`` alone also takes ``is_partial_mask``: ``False`` makes every mark
-``[redacted:<pattern>]``, keeping no part of a value (no email host, phone
-country code or card digits) — for text shown outside its owner.
+Every mark is ``[redacted:<pattern>]``: no part of a value is kept (no email
+host, phone country code or card digits).
 
 Callers needing the granular surface (single-pattern detection, NER,
-category lookups, replacement-mask strategies) import directly from
+category lookups, the replacement mark) import directly from
 ``pii_core_lib.*`` — the package is the advanced API, the
 service is the easy one.
 """
@@ -67,7 +66,7 @@ class PiiService(object):
         raise_on_pii: bool = False,
         audit_logger: Optional[logging.Logger] = None,
         context: str = 'payload',
-        person_names: Optional[Iterable[str]] = None,
+        strings_to_scrub: Optional[Iterable[str]] = None,
     ) -> List[PIIPatternFinding]:
         """Scan ``payload`` and report what was found — do NOT modify it.
 
@@ -89,9 +88,10 @@ class PiiService(object):
                 module logger so detections never disappear.
             context: short label woven into the audit log so operators
                 can locate the source (e.g. ``'admin_chat_response'``).
-            person_names: names of the person the payload is about,
-                reported as ``person_name`` wherever one stands as a
-                whole word. ``None`` / blank values / initials are skipped.
+            strings_to_scrub: literal strings to scrub besides the
+                patterns, reported as ``custom_string`` wherever one stands
+                as a whole word. ``None`` / blank / one-character values
+                are skipped.
 
         Returns:
             The list of :class:`PIIPatternFinding` (empty when clean).
@@ -107,8 +107,7 @@ class PiiService(object):
             raise_on_pii=raise_on_pii,
             audit_logger=audit_logger,
             context=context,
-            person_names=person_names,
-            is_partial_mask=True,
+            strings_to_scrub=strings_to_scrub,
         )
         return findings
 
@@ -120,8 +119,7 @@ class PiiService(object):
         raise_on_pii: bool = False,
         audit_logger: Optional[logging.Logger] = None,
         context: str = 'payload',
-        person_names: Optional[Iterable[str]] = None,
-        is_partial_mask: bool = True,
+        strings_to_scrub: Optional[Iterable[str]] = None,
     ) -> Any:
         """Scan ``payload`` and return a scrubbed copy.
 
@@ -131,10 +129,7 @@ class PiiService(object):
         ``None`` / dates / Decimals / UUIDs) pass through unchanged.
         The input object is never mutated.
 
-        Args / Raises: see :meth:`validate`, plus ``is_partial_mask``:
-        ``True`` keeps the per-pattern masks (an email's host, a phone's
-        country code, a card's last four digits); ``False`` makes every
-        mark ``[redacted:<pattern>]``.
+        Args / Raises: see :meth:`validate`.
 
         Returns:
             A new payload safe to forward to the LLM / a downstream
@@ -148,8 +143,7 @@ class PiiService(object):
             raise_on_pii=raise_on_pii,
             audit_logger=audit_logger,
             context=context,
-            person_names=person_names,
-            is_partial_mask=is_partial_mask,
+            strings_to_scrub=strings_to_scrub,
         )
         return scrubbed
 
@@ -161,8 +155,7 @@ class PiiService(object):
         raise_on_pii: bool,
         audit_logger: Optional[logging.Logger],
         context: str,
-        person_names: Optional[Iterable[str]],
-        is_partial_mask: bool,
+        strings_to_scrub: Optional[Iterable[str]],
     ) -> Tuple[List[PIIPatternFinding], Any]:
         """Shared core for :meth:`validate` and :meth:`scrub`.
 
@@ -171,8 +164,7 @@ class PiiService(object):
         identical on both paths so a switch from ``validate`` to ``scrub``
         cannot change which detections an operator sees.
         """
-        findings, scrubbed = scrub_pii_with_findings(
-            payload, person_names=person_names, is_partial_mask=is_partial_mask)
+        findings, scrubbed = scrub_pii_with_findings(payload, strings_to_scrub=strings_to_scrub)
         if strict:
             findings = findings + self._strict_only_findings(payload)
         if findings:

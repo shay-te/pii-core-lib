@@ -63,10 +63,10 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Tuple
 
-# The pattern name of a name the caller says belongs to the person a text is about; the NER detector uses it too.
-PERSON_NAME_PATTERN_NAME = 'person_name'
-# An initial is skipped: a one-letter name would redact every lone word of that letter ("a", "I").
-PERSON_NAME_MIN_LENGTH = 2
+# The pattern name of a string the caller asks to scrub.
+STRING_TO_SCRUB_PATTERN_NAME = 'custom_string'
+# A one-character string is skipped: it would redact every lone word of that letter ("a", "I").
+STRING_MIN_LENGTH = 2
 
 
 @dataclass(frozen=True)
@@ -87,8 +87,7 @@ class PIIPatternFinding(object):
 # mastodon_handle (scrubadub), uk_utr (scrubadub),
 # credit_card+SSN+IBAN+ABA+VIN checksums (Presidio), the per-state US
 # driver's-license shape union (scrubadub), pii-codex severity tiers
-# (see _PATTERN_CATEGORIES below), scrubadub-style per-pattern
-# replacement strategy (see _PATTERN_REPLACEMENTS below).
+# (see _PATTERN_CATEGORIES below).
 #
 # Documented gaps (need a new dep):
 #   * phonenumbers-backed phone validation (kills the loose
@@ -579,82 +578,13 @@ def category_for(pattern_name: str):
     return _PATTERN_CATEGORIES.get(pattern_name)
 
 
-# Per-pattern replacement strategies. Default (no entry) → full
-# redaction ``[redacted:<name>]``. Each strategy must produce a
-# replacement that does NOT re-match its own pattern (the round-trip
-# ``scrub_pii → assert_no_pii`` flow depends on this).
-#
-#   * ``credit_card``: ``[redacted:credit_card:****1234]`` (last 4)
-#   * ``phone``:       ``[redacted:phone:+1]`` (country code only)
-#   * ``email``:       ``[redacted:email:host=example.com]`` (host, no ``@``)
-#   * ``gps_coordinates``: ``[redacted:gps_coordinates:37.4,-122.1]``
-#     (1-decimal precision — ~11 km, region-scale).
+def replacement_for(pattern_name: str) -> str:
+    """Return the scrubber replacement for one match: ``[redacted:<pattern_name>]``.
 
-
-def _mask_credit_card_last_four(matched_text: str) -> str:
-    digits = ''.join(ch for ch in matched_text if ch.isdigit())
-    last_four = digits[-4:] if len(digits) >= 4 else digits
-    return f'[redacted:credit_card:****{last_four}]'
-
-
-def _mask_phone_country_code(matched_text: str) -> str:
-    stripped = matched_text.lstrip()
-    if stripped.startswith('+'):
-        country_digits = []
-        for char in stripped[1:]:
-            if char.isdigit() and len(country_digits) < 3:
-                country_digits.append(char)
-            elif char.isdigit():
-                break
-            elif country_digits:
-                break
-        if country_digits:
-            return f'[redacted:phone:+{"".join(country_digits)}]'
-    return '[redacted:phone]'
-
-
-def _mask_email_host(matched_text: str) -> str:
-    # ``@`` deliberately dropped so the replacement doesn't re-match the
-    # email regex on a second pass.
-    at_index = matched_text.rfind('@')
-    if at_index == -1:
-        return '[redacted:email]'
-    return f'[redacted:email:host={matched_text[at_index + 1:]}]'
-
-
-def _mask_gps_low_precision(matched_text: str) -> str:
-    coordinate_match = re.match(
-        r'\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)', matched_text,
-    )
-    if not coordinate_match:
-        return '[redacted:gps_coordinates]'
-    latitude = float(coordinate_match.group(1))
-    longitude = float(coordinate_match.group(2))
-    return f'[redacted:gps_coordinates:{latitude:.1f},{longitude:.1f}]'
-
-
-_PATTERN_REPLACEMENTS = {
-    'credit_card': _mask_credit_card_last_four,
-    'phone': _mask_phone_country_code,
-    'email': _mask_email_host,
-    'gps_coordinates': _mask_gps_low_precision,
-}
-
-
-def replacement_for(pattern_name: str, matched_text: str, is_partial_mask: bool = True) -> str:
-    """Return the scrubber replacement for one match.
-
-    Per-pattern strategy from :data:`_PATTERN_REPLACEMENTS`; default is
-    ``[redacted:<pattern_name>]``. ``is_partial_mask=False`` skips the
-    strategies, so no part of the value (an email host, a phone country
+    Every mark is full: no part of the value (an email host, a phone country
     code, a card's last four digits) is kept.
     """
-    if not is_partial_mask:
-        return f'[redacted:{pattern_name}]'
-    strategy = _PATTERN_REPLACEMENTS.get(pattern_name)
-    if strategy is None:
-        return f'[redacted:{pattern_name}]'
-    return strategy(matched_text)
+    return f'[redacted:{pattern_name}]'
 
 
 def redact_preview(matched_text: str) -> str:
@@ -737,24 +667,24 @@ def get_validator_for(pattern_name: str):
     return _PATTERN_VALIDATORS.get(pattern_name)
 
 
-def build_person_name_regexes(person_names: Optional[Iterable[str]]) -> Tuple[Tuple[str, re.Pattern[str]], ...]:
-    """``(PERSON_NAME_PATTERN_NAME, regex)`` pairs for the names the caller
-    says belong to the person a text is about (their first and last name).
+def build_string_regexes(strings_to_scrub: Optional[Iterable[str]]) -> Tuple[Tuple[str, re.Pattern[str]], ...]:
+    """``(STRING_TO_SCRUB_PATTERN_NAME, regex)`` pairs for the strings the
+    caller asks to scrub.
 
-    Each name matches as a whole word, in any case and any script: a name
-    inside a longer word ("Dan" in "Danger") is kept. ``None``, blank values
-    and initials are skipped. The scrubber resolves these matches with the
-    pattern set in its one pass.
+    Each string matches literally, as a whole word, in any case and any
+    script: one inside a longer word ("Dan" in "Danger") is kept. ``None``,
+    blank values and one-character strings are skipped. The scrubber
+    resolves these matches with the pattern set in its one pass.
     """
     regexes = []
-    for person_name in person_names or ():
-        if person_name is None:
+    for string_to_scrub in strings_to_scrub or ():
+        if string_to_scrub is None:
             continue
-        stripped_name = person_name.strip()
-        if len(stripped_name) < PERSON_NAME_MIN_LENGTH:
+        stripped_string = string_to_scrub.strip()
+        if len(stripped_string) < STRING_MIN_LENGTH:
             continue
-        regex = re.compile(rf'(?<!\w){re.escape(stripped_name)}(?!\w)', re.IGNORECASE)
-        regexes.append((PERSON_NAME_PATTERN_NAME, regex))
+        regex = re.compile(rf'(?<!\w){re.escape(stripped_string)}(?!\w)', re.IGNORECASE)
+        regexes.append((STRING_TO_SCRUB_PATTERN_NAME, regex))
     return tuple(regexes)
 
 
